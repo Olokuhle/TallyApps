@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, createContext, useContext } from "react";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-import { getFirestore, collection, doc, onSnapshot, addDoc, updateDoc, deleteDoc, setDoc, getDoc, getDocs, writeBatch, orderBy, query } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getFirestore, collection, doc, onSnapshot, addDoc, updateDoc, deleteDoc, setDoc, getDoc, getDocs, writeBatch, orderBy, query, where, limit } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
 // ── FIREBASE ──────────────────────────────────────────────────
@@ -22,6 +22,7 @@ const txCol = (uid) => collection(db, "users", uid, "transactions");
 const txDoc = (uid, id) => doc(db, "users", uid, "transactions", id);
 const personDoc = (uid, id) => doc(db, "users", uid, "people", id);
 const globalUserDoc = (id) => doc(db, "users", id);
+const globalUsersCol = collection(db, "users");
 
 // ── STYLES ────────────────────────────────────────────────────
 const style = document.createElement("style");
@@ -297,7 +298,7 @@ const PersonScreen = ({ person, onBack, onTxClick, onAddNew, onEditPerson }) => 
         <div style={{ textAlign: "center", margin: "16px 0 28px" }}>
           <div style={{ fontSize: 14, fontWeight: 400, color: "#A8A8A8" }}>Current balance</div>
           {allPaid ? (
-            <div style={{ fontWeight: 500, fontSize: 28, marginTop: 4, color: "#3A9E6E", letterSpacing: -0.8 }}>✓ Settled up</div>
+            <div style={{ fontWeight: 500, fontSize: 28, marginTop: 4, color: "#3A9E6E", letterSpacing: -0.8 }}>Settled up</div>
           ) : (
             <div style={{ fontWeight: 500, fontSize: 28, marginTop: 4, color: balance >= 0 ? "#111" : "#6B2D6B", letterSpacing: -0.8 }}>
               {balance < 0 ? "-" : ""}R{fmt(Math.abs(balance))}
@@ -338,17 +339,17 @@ const PersonScreen = ({ person, onBack, onTxClick, onAddNew, onEditPerson }) => 
 
       {/* All-paid confirmation sheet */}
       <BottomSheet open={paidSheet} onClose={() => setPaidSheet(false)}>
-        <div style={{ paddingTop: 12 }}>
-          <div style={{ fontSize: 28, fontWeight: 600, color: "#111", lineHeight: 1.3 }}>Mark everything<br />as settled?</div>
-          <div style={{ fontSize: 14, color: "#BABABA", marginTop: 8, marginBottom: 24 }}>
+        <div style={{ paddingTop: 12, textAlign: "center" }}>
+          <div style={{ fontSize: 28, fontWeight: 400, color: "#111", lineHeight: 1.3 }}>Are you sure all<br />was paid?</div>
+          <div style={{ fontSize: 13, color: "#BABABA", marginTop: 8, marginBottom: 24, fontWeight: 300 }}>
             This will settle {unpaidTxs.length} unpaid transaction{unpaidTxs.length !== 1 ? "s" : ""} with {person.name}.
           </div>
-          <div style={{ display: "flex", gap: 10 }}>
-            <button onClick={() => setPaidSheet(false)} style={{ flex: 1, background: "#FDE8E8", color: "#E05A5A", border: "none", borderRadius: 99, padding: "15px 0", fontSize: 15, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-              <span className="material-symbols-outlined" style={{ fontSize: 18 }}>close</span> Cancel
+          <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+            <button onClick={() => setPaidSheet(false)} style={{ flex: 1, background: "#FFF0F0", color: "#D96A6A", border: "none", borderRadius: 99, padding: "14px 0", fontSize: 14, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, letterSpacing: -0.2 }}>
+              <span className="material-symbols-outlined" style={{ fontSize: 18 }}>close</span> No, Cancel
             </button>
-            <button onClick={() => { markAllPaid(person.id); setPaidSheet(false); }} style={{ flex: 1, background: "#C6F0D8", color: "#3A9E6E", border: "none", borderRadius: 99, padding: "15px 0", fontSize: 15, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-              <span className="material-symbols-outlined" style={{ fontSize: 18 }}>check</span> Confirm
+            <button onClick={() => { markAllPaid(person.id); setPaidSheet(false); }} style={{ flex: 1, background: "#D1F5D3", color: "#2B8A44", border: "none", borderRadius: 99, padding: "14px 0", fontSize: 14, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, letterSpacing: -0.2 }}>
+              <span className="material-symbols-outlined" style={{ fontSize: 18 }}>check</span> Yes All paid
             </button>
           </div>
         </div>
@@ -388,8 +389,12 @@ const AddScreen = ({ person, transaction, onBack, onDone }) => {
   const done = () => {
     const amt = parseInt(amount || "0");
     if (!amt) return;
-    if (isEdit) updateTransaction({ ...transaction, direction: dir, amount: amt, description: desc });
-    else addTransaction({ personId: person.id, direction: dir, amount: amt, description: desc });
+
+    let finalDesc = desc.trim();
+    if (!finalDesc) finalDesc = dir === "gave" ? "Borrowed" : "Paid";
+
+    if (isEdit) updateTransaction({ ...transaction, direction: dir, amount: amt, description: finalDesc });
+    else addTransaction({ personId: person.id, direction: dir, amount: amt, description: finalDesc });
     onDone();
   };
   return (
@@ -434,10 +439,13 @@ const AddScreen = ({ person, transaction, onBack, onDone }) => {
 };
 
 // ── TX DETAIL SHEET ───────────────────────────────────────────
-const TxSheet = ({ tx, open, onClose, onEdit }) => {
-  const { markPaid, deleteTransaction, incrementReminder, showToast } = useApp();
+const TxSheet = ({ tx, open, onClose, onEdit, onViewProfile }) => {
+  const { people, markPaid, deleteTransaction, incrementReminder, showToast } = useApp();
   if (!tx) return null;
+  const person = people.find(p => p.id === tx.personId);
   const neg = tx.direction === "gave";
+  const isPaid = tx.status === "paid";
+
   return (
     <BottomSheet open={open} onClose={onClose}>
       <div style={{ paddingTop: 36 }}>
@@ -447,31 +455,62 @@ const TxSheet = ({ tx, open, onClose, onEdit }) => {
             {neg ? `-R${fmt(tx.amount)}` : `R${fmt(tx.amount)}`}
           </div>
         </div>
+
         {[{ l: "Description", v: tx.description }, { l: "Date & Time", v: formatDate(tx.datetime) }, { l: "Logged by", v: tx.loggedByName || "You" }].map(({ l, v }) => (
           <div key={l} style={{ textAlign: "center", marginBottom: 26 }}>
             <div style={{ fontSize: 13, fontWeight: 300, color: "#BABABA", marginBottom: 5, letterSpacing: 0.2 }}>{l}</div>
-            <div style={{ fontSize: 16, fontWeight: 700, color: "#111", letterSpacing: 0.1 }}>{v}</div>
+            <div style={{ fontSize: 16, fontWeight: 500, color: "#111", letterSpacing: 0.1 }}>{v}</div>
           </div>
         ))}
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 36, paddingBottom: 8 }}>
-          <button onClick={() => { deleteTransaction(tx.id); onClose(); showToast("Deleted"); }} style={{ width: 54, height: 54, borderRadius: "50%", background: "#EEE8F7", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-            <span className="material-symbols-outlined" style={{ fontSize: 22, color: "#7C5CBF", fontVariationSettings: "'FILL' 0, 'wght' 300" }}>delete</span>
-          </button>
-          <button onClick={() => { onClose(); onEdit(tx); }} style={{ width: 54, height: 54, borderRadius: "50%", background: "#EEE8F7", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-            <span className="material-symbols-outlined" style={{ fontSize: 22, color: "#7C5CBF", fontVariationSettings: "'FILL' 0, 'wght' 300" }}>edit</span>
-          </button>
-          <button onClick={() => {
-            const amt = `R${fmt(tx.amount)}`;
-            const text = `Hi! Just a friendly reminder about ${amt} for "${tx.description}" logged on ${formatDate(tx.datetime)}.\n\nTracked via Tally 🐧`;
-            if (navigator.share) { navigator.share({ title: `Tally reminder — ${amt}`, text }); }
-            else { navigator.clipboard?.writeText(text).then(() => showToast("Copied to clipboard!")); }
-            incrementReminder(tx.id);
-          }} style={{ flex: 1, background: "#FDEBC8", border: "none", borderRadius: 99, padding: "14px 0", fontSize: 14, fontWeight: 600, color: "#D4800A", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}>
-            <span className="material-symbols-outlined" style={{ fontSize: 20, color: "#D4800A", fontVariationSettings: "'FILL' 0, 'wght' 300" }}>notifications_active</span> Remind
-          </button>
-          <button onClick={() => { markPaid(tx.id); onClose(); showToast("Marked as paid!"); }} style={{ flex: 1, background: "#C6F0D8", border: "none", borderRadius: 99, padding: "14px 0", fontSize: 14, fontWeight: 600, color: "#3A9E6E", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}>
-            <span className="material-symbols-outlined" style={{ fontSize: 20, color: "#3A9E6E", fontVariationSettings: "'FILL' 0, 'wght' 400" }}>check</span> Paid
-          </button>
+
+        {person && (
+          <div style={{ textAlign: "center", marginBottom: 32 }}>
+            <div style={{ fontSize: 13, fontWeight: 300, color: "#BABABA", marginBottom: 5, letterSpacing: 0.2 }}>
+              {isPaid || !neg ? "Paid by" : "Owed by"}
+            </div>
+            <div style={{ fontSize: 16, fontWeight: 500, color: "#111", letterSpacing: 0.1, marginBottom: 12 }}>
+              {person.name || person.fullName}
+            </div>
+            <button onClick={() => { onClose(); onViewProfile && onViewProfile(person); }} style={{ background: "#F5F5F5", border: "none", borderRadius: 99, padding: "8px 16px", fontSize: 13, fontWeight: 600, color: "#111", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4 }}>
+              View profile <span className="material-symbols-outlined" style={{ fontSize: 16 }}>chevron_right</span>
+            </button>
+          </div>
+        )}
+
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12, paddingBottom: 8 }}>
+          {!isPaid ? (
+            <>
+              <button onClick={() => { deleteTransaction(tx.id); onClose(); showToast("Deleted"); }} style={{ width: 54, height: 54, borderRadius: "50%", background: "#EEE8F7", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <span className="material-symbols-outlined" style={{ fontSize: 22, color: "#7C5CBF", fontVariationSettings: "'FILL' 0, 'wght' 300" }}>delete</span>
+              </button>
+              <button onClick={() => { onClose(); onEdit(tx); }} style={{ width: 54, height: 54, borderRadius: "50%", background: "#EEE8F7", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <span className="material-symbols-outlined" style={{ fontSize: 22, color: "#7C5CBF", fontVariationSettings: "'FILL' 0, 'wght' 300" }}>edit</span>
+              </button>
+              <button onClick={() => {
+                const amt = `R${fmt(tx.amount)}`;
+                const text = `Hi! Just a friendly reminder about ${amt} for "${tx.description}" logged on ${formatDate(tx.datetime)}.\n\nTracked via Tally 🐧`;
+                if (navigator.share) { navigator.share({ title: `Tally reminder — ${amt}`, text }); }
+                else { navigator.clipboard?.writeText(text).then(() => showToast("Copied to clipboard!")); }
+                incrementReminder(tx.id);
+              }} style={{ flex: 1, background: "#FDEBC8", border: "none", borderRadius: 99, padding: "14px 0", fontSize: 14, fontWeight: 600, color: "#D4800A", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}>
+                <span className="material-symbols-outlined" style={{ fontSize: 20, color: "#D4800A", fontVariationSettings: "'FILL' 0, 'wght' 300" }}>vibration</span> Remind
+              </button>
+              <button onClick={() => { markPaid(tx.id); onClose(); showToast("Marked as paid!"); }} style={{ flex: 1, background: "#C6F0D8", border: "none", borderRadius: 99, padding: "14px 0", fontSize: 14, fontWeight: 600, color: "#3A9E6E", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}>
+                <span className="material-symbols-outlined" style={{ fontSize: 20, color: "#3A9E6E", fontVariationSettings: "'FILL' 0, 'wght' 400" }}>check</span> Paid
+              </button>
+            </>
+          ) : (
+            <div style={{ width: "100%", display: "flex", justifyContent: "center" }}>
+              <button onClick={() => {
+                const amt = `R${fmt(tx.amount)}`;
+                const text = `Thanks for the ${amt} for "${tx.description}"!\n\nTracked via Tally 🐧`;
+                if (navigator.share) { navigator.share({ title: `Tally — Thanks!`, text }); }
+                else { navigator.clipboard?.writeText(text).then(() => showToast("Copied to clipboard!")); }
+              }} style={{ background: "#FDEBC8", border: "none", borderRadius: 99, padding: "16px 32px", fontSize: 14, fontWeight: 600, color: "#D4800A", cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, letterSpacing: 0.1 }}>
+                <span className="material-symbols-outlined" style={{ fontSize: 20, color: "#D4800A", fontVariationSettings: "'FILL' 0, 'wght' 400" }}>vibration</span> Say Thanks
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </BottomSheet>
@@ -714,34 +753,66 @@ const AccountScreen = ({ onNavigate, authUser, onSignOut }) => {
 };
 
 // ── ADD PERSON SCREEN ─────────────────────────────────────────
-const TALLY_USERS = [
-  { id: "tu1", name: "Aisha", fullName: "Aisha Patel", initials: "AP", phone: "+27 82 111 2233" },
-  { id: "tu2", name: "Bongani", fullName: "Bongani Zulu", initials: "BZ", phone: "+27 73 456 7890" },
-  { id: "tu3", name: "Fatima", fullName: "Fatima Mokoena", initials: "FM", phone: "+27 83 987 6543" },
-  { id: "tu4", name: "Kwame", fullName: "Kwame Sithole", initials: "KS", phone: "+27 63 210 9876" },
-  { id: "tu5", name: "Priya", fullName: "Priya Naidoo", initials: "PN", phone: "+27 72 765 4321" },
-  { id: "tu6", name: "Thabo", fullName: "Thabo Molefe", initials: "TM", phone: "+27 62 321 0987" },
-  { id: "tu7", name: "Zanele", fullName: "Zanele Ntuli", initials: "ZN", phone: "+27 64 765 4321" },
-];
 
 const AddPersonScreen = ({ onBack, onAdd }) => {
-  const { people } = useApp();
+  const { people, showSuccess, globalUsers } = useApp();
   const [query, setQuery] = useState("");
   const [searched, setSearched] = useState(false);
   const [manualName, setManualName] = useState("");
   const [manualPhone, setManualPhone] = useState("");
-  const existingIds = new Set(people.map(p => p.fullName));
+  const existingGlobalIds = new Set(people.map(p => p.globalId).filter(Boolean));
+  const existingNames = new Set(people.map(p => p.fullName || p.name));
+
   const trimmed = query.trim();
   const results = trimmed.length >= 2
-    ? TALLY_USERS.filter(u => u.fullName.toLowerCase().includes(trimmed.toLowerCase()) || u.phone.replace(/\s/g, "").includes(trimmed.replace(/\s/g, "")))
+    ? globalUsers.filter(u =>
+      (u.name.toLowerCase().includes(trimmed.toLowerCase()) ||
+        (u.phone && u.phone.replace(/\s/g, "").includes(trimmed.replace(/\s/g, ""))))
+      && !existingGlobalIds.has(u.id) && !existingNames.has(u.name)
+    )
     : [];
+
   const handleSearch = () => { if (trimmed.length >= 2) setSearched(true); };
   const handleKey = (e) => { if (e.key === "Enter") handleSearch(); };
+
   const handleManualAdd = () => {
     if (!manualName.trim()) return;
     const words = manualName.trim().split(" ");
     onAdd({ name: words[0], initials: (words[0][0] + (words[1] ? words[1][0] : "")).toUpperCase(), phone: manualPhone.trim() || null });
   };
+
+  const handleGlobalAdd = (u) => {
+    const words = u.name.split(" ");
+    const initials = (words[0][0] + (words[1] ? words[1][0] : "")).toUpperCase();
+    onAdd({
+      name: words[0],
+      fullName: u.name,
+      initials,
+      phone: u.phone || null,
+      globalId: u.id,
+      isLinked: true
+    });
+  };
+
+  const handleImportContacts = async () => {
+    if (!('contacts' in navigator && 'ContactsManager' in window)) {
+      showSuccess("Not supported", "Apple blocks web apps from reading contacts on iPhones.", "info", "#111", "#F5F5F5");
+      return;
+    }
+    try {
+      const props = ['name', 'tel'];
+      const opts = { multiple: false };
+      const contacts = await navigator.contacts.select(props, opts);
+      if (contacts && contacts.length > 0) {
+        const c = contacts[0];
+        if (c.name && c.name.length > 0) setManualName(c.name[0]);
+        if (c.tel && c.tel.length > 0) setManualPhone(c.tel[0]);
+      }
+    } catch (ex) {
+      console.warn("Contacts API failed or cancelled.", ex);
+    }
+  };
+
   return (
     <div style={{ background: "#fff", paddingBottom: 24 }}>
       <div style={{ padding: "env(safe-area-inset-top, 20px) 24px 10px", background: "#fff", position: "sticky", top: 0, zIndex: 100 }}>
@@ -765,15 +836,13 @@ const AddPersonScreen = ({ onBack, onAdd }) => {
             {results.map(u => (
               <div key={u.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", background: "#fff", border: "1px solid #E2E2E2", borderRadius: 99, marginBottom: 10 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                  <Avatar person={u} size={44} />
+                  <Avatar person={{ fullName: u.name, name: u.name }} size={44} />
                   <div>
-                    <div style={{ fontWeight: 600, fontSize: 15, color: "#111" }}>{u.fullName}</div>
-                    <div style={{ fontSize: 12, color: "#BABABA" }}>{u.phone}</div>
+                    <div style={{ fontWeight: 600, fontSize: 15, color: "#111" }}>{u.name}</div>
+                    {u.phone && <div style={{ fontSize: 12, color: "#BABABA", marginTop: 2 }}>{u.phone}</div>}
                   </div>
                 </div>
-                {existingIds.has(u.fullName)
-                  ? <span style={{ fontSize: 12, color: "#BABABA", fontWeight: 500 }}>Added</span>
-                  : <button onClick={() => onAdd(u)} style={{ background: "#E8E0F7", border: "none", borderRadius: 99, padding: "8px 16px", fontSize: 13, fontWeight: 600, color: "#7C5CBF", cursor: "pointer" }}>Add</button>}
+                <button onClick={() => handleGlobalAdd(u)} style={{ background: "#E8E0F7", border: "none", borderRadius: 99, padding: "8px 16px", fontSize: 13, fontWeight: 600, color: "#7C5CBF", cursor: "pointer" }}>Add</button>
               </div>
             ))}
           </div>
@@ -782,7 +851,9 @@ const AddPersonScreen = ({ onBack, onAdd }) => {
           <div style={{ textAlign: "center", color: "#BABABA", fontSize: 14, padding: "12px 0 24px" }}>No Tally users found — add manually below</div>
         )}
         {/* Manual add */}
-        <div style={{ fontSize: 12, fontWeight: 600, color: "#888", marginBottom: 12, textTransform: "uppercase", letterSpacing: .7 }}>Add manually</div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: "#888", textTransform: "uppercase", letterSpacing: .7 }}>Add manually</div>
+        </div>
         <div style={{ position: "relative", marginBottom: 12 }}>
           <span className="material-symbols-outlined" style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", fontSize: 20, color: "#BABABA", fontVariationSettings: "'FILL' 0" }}>person</span>
           <input value={manualName} onChange={e => setManualName(e.target.value)} placeholder="Full name"
@@ -791,7 +862,10 @@ const AddPersonScreen = ({ onBack, onAdd }) => {
         <div style={{ position: "relative", marginBottom: 20 }}>
           <span className="material-symbols-outlined" style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", fontSize: 20, color: "#BABABA", fontVariationSettings: "'FILL' 0" }}>phone</span>
           <input value={manualPhone} onChange={e => setManualPhone(e.target.value)} placeholder="Phone number (optional)"
-            style={{ width: "100%", background: "#F5F5F5", border: "none", borderRadius: 99, padding: "14px 16px 14px 44px", fontSize: 16, color: "#111", outline: "none", boxSizing: "border-box" }} />
+            style={{ width: "100%", background: "#F5F5F5", border: "none", borderRadius: 99, padding: "14px 44px", fontSize: 16, color: "#111", outline: "none", boxSizing: "border-box" }} />
+          <button onClick={handleImportContacts} style={{ position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", padding: 8, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: "#BABABA" }}>
+            <span className="material-symbols-outlined" style={{ fontSize: 20 }}>contact_page</span>
+          </button>
         </div>
         <button onClick={handleManualAdd} disabled={!manualName.trim()}
           style={{ width: "100%", background: manualName.trim() ? "#E8E0F7" : "#F5F5F5", border: "none", borderRadius: 99, padding: "16px 0", fontSize: 15, fontWeight: 600, color: manualName.trim() ? "#7C5CBF" : "#BABABA", cursor: manualName.trim() ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, transition: "all 150ms" }}>
@@ -981,6 +1055,7 @@ export default function App() {
 
   const [transactions, setTransactions] = useState([]);
   const [people, setPeople] = useState([]);
+  const [globalUsers, setGlobalUsers] = useState([]);
 
   const [tab, setTab] = useState("home");
   const [screen, setScreen] = useState("home");
@@ -1052,7 +1127,7 @@ export default function App() {
 
   // ── Firestore listeners (scoped to user) ──────────────────
   useEffect(() => {
-    if (!authUser) { setPeople([]); setTransactions([]); return; }
+    if (!authUser) { setPeople([]); setTransactions([]); setGlobalUsers([]); return; }
     const uid = authUser.uid;
     const unsubP = onSnapshot(peopleCol(uid), snap =>
       setPeople(snap.docs.map(d => ({ id: d.id, ...d.data() })))
@@ -1060,6 +1135,12 @@ export default function App() {
     const unsubT = onSnapshot(txCol(uid), snap =>
       setTransactions(snap.docs.map(d => ({ id: d.id, ...d.data() })))
     );
+
+    // Fetch registered global users once
+    getDocs(query(globalUsersCol, where("isRegistered", "==", true))).then(snap => {
+      setGlobalUsers(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(u => u.id !== uid));
+    }).catch(console.error);
+
     return () => { unsubP(); unsubT(); };
   }, [authUser]);
 
@@ -1234,7 +1315,7 @@ export default function App() {
     else if (["notifications", "privacy-security", "help-centre", "terms"].includes(screen)) setScreen("account");
   };
 
-  const ctx = { transactions, people, authUser, addTransaction, updateTransaction, markPaid, markAllPaid, deleteTransaction, incrementReminder, showToast, showSuccess };
+  const ctx = { transactions, people, authUser, globalUsers, addTransaction, updateTransaction, markPaid, markAllPaid, deleteTransaction, incrementReminder, showToast, showSuccess };
 
   // ── Render states ─────────────────────────────────────────
   if (authLoading) return <LoadingScreen />;
@@ -1268,7 +1349,7 @@ export default function App() {
           </div>
         </div>
 
-        <TxSheet tx={selTx} open={sheetOpen} onClose={() => setSheetOpen(false)} onEdit={tx => { const p = people.find(x => x.id === tx.personId); setSelPerson(p); setEditTx(tx); setScreen("add"); }} />
+        <TxSheet tx={selTx} open={sheetOpen} onClose={() => setSheetOpen(false)} onEdit={tx => { const p = people.find(x => x.id === tx.personId); setSelPerson(p); setEditTx(tx); setScreen("add"); }} onViewProfile={p => { setSelPerson(p); setScreen("person"); setSheetOpen(false); }} />
         <Toast message={toast.m} visible={toast.v} />
         <SuccessOverlay visible={success.v} icon={success.icon} title={success.title} subtitle={success.subtitle} color={success.color} bg={success.bg} onDone={() => setSuccess(s => ({ ...s, v: false }))} />
       </div>
