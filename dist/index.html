@@ -492,6 +492,8 @@
       border-bottom: none;
     }
   </style>
+  <script type="module" crossorigin src="/assets/main-l-wlKBTK.js"></script>
+  <link rel="modulepreload" crossorigin href="/assets/modulepreload-polyfill-B5Qt9EMX.js">
 </head>
 
 <body>
@@ -813,137 +815,6 @@
     </div>
   </div>
 
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-    import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-
-    const firebaseConfig = {
-      apiKey: "AIzaSyCNSwL3fbRzOHe4DpaHvMJ--8gz46VYpm0",
-      authDomain: "tally-app-fac0e.firebaseapp.com",
-      projectId: "tally-app-fac0e",
-      storageBucket: "tally-app-fac0e.firebasestorage.app",
-      messagingSenderId: "260823272960",
-      appId: "1:260823272960:web:a1c1364b412bb1010a92e5"
-    };
-
-    const app = initializeApp(firebaseConfig);
-    const auth = getAuth(app);
-    const provider = new GoogleAuthProvider();
-
-    onAuthStateChanged(auth, (user) => {
-      if (user) {
-        window.location.href = '/app.html';
-      }
-    });
-
-    document.getElementById('google-signin-btn').addEventListener('click', async () => {
-      try {
-        await signInWithPopup(auth, provider);
-      } catch (error) {
-        console.error("Authentication failed:", error);
-        if (error.code !== "auth/popup-closed-by-user") {
-          alert("Sign-in failed. Please try again.");
-        }
-      }
-    });
-
-    let isSignUp = false;
-    const authForm = document.getElementById('email-auth-form');
-    const toggleBtn = document.getElementById('auth-toggle-btn');
-    const toggleText = document.getElementById('auth-toggle-text');
-    const nameInput = document.getElementById('auth-name');
-    const submitBtn = document.getElementById('auth-submit-btn');
-    const errorMsg = document.getElementById('auth-error-msg');
-    const modalTitle = document.getElementById('modal-title');
-    const modalSubtitle = document.getElementById('modal-subtitle');
-
-    toggleBtn.addEventListener('click', (e) => {
-      e.preventDefault();
-      isSignUp = !isSignUp;
-      errorMsg.style.display = 'none';
-      if (isSignUp) {
-        modalTitle.textContent = "Create an account";
-        modalSubtitle.textContent = "Join Tally to start tracking with friends";
-        nameInput.style.display = 'block';
-        toggleText.textContent = "Already have an account?";
-        toggleBtn.textContent = "Sign in";
-        submitBtn.textContent = "Create Account";
-      } else {
-        modalTitle.textContent = "Sign in to Tally";
-        modalSubtitle.textContent = "Track what you owe and what's owed";
-        nameInput.style.display = 'none';
-        toggleText.textContent = "Don't have an account?";
-        toggleBtn.textContent = "Sign up";
-        submitBtn.textContent = "Sign In";
-      }
-    });
-
-    authForm.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const email = document.getElementById('auth-email').value;
-      const pwd = document.getElementById('auth-password').value;
-      const name = nameInput.value;
-
-      errorMsg.style.display = 'none';
-      submitBtn.style.opacity = '0.7';
-      submitBtn.textContent = "Please wait...";
-
-      try {
-        if (isSignUp) {
-          const userCred = await createUserWithEmailAndPassword(auth, email, pwd);
-          if (name.trim()) {
-            await updateProfile(userCred.user, { displayName: name.trim() });
-          }
-        } else {
-          await signInWithEmailAndPassword(auth, email, pwd);
-        }
-      } catch (err) {
-        console.error("Auth error:", err);
-        errorMsg.style.display = 'block';
-        errorMsg.textContent = err.message.replace("Firebase:", "").trim();
-        submitBtn.style.opacity = '1';
-        submitBtn.textContent = isSignUp ? "Create Account" : "Sign In";
-      }
-    });
-
-    // NAV shadow on scroll
-    window.addEventListener('scroll', () => {
-      document.getElementById('nav').classList.toggle('shadow', window.scrollY > 20);
-    });
-
-    // Mobile Menu
-    window.toggleMobileMenu = function () {
-      document.getElementById('mobile-menu').classList.toggle('active');
-    }
-
-    // Modal
-    window.openModal = function () {
-      document.getElementById('modal').classList.add('active');
-      document.body.style.overflow = 'hidden';
-    }
-    window.closeModal = function (e) {
-      if (e.target === document.getElementById('modal')) {
-        document.getElementById('modal').classList.remove('active');
-        document.body.style.overflow = '';
-      }
-    }
-
-    // FAQs
-    const faqs = [
-      { q: "Why not just use a notes app or spreadsheet?", a: "Spreadsheets need manual effort every time. Tally gives you a live balance per person, built-in reminders, and a clean history — all without lifting a finger." },
-      { q: "Does the other person need to be on Tally?", a: "No. Add anyone with just their name. If they join Tally later you can link up and share transaction history automatically." },
-      { q: "Is Tally free to use?", a: "The Free plan covers essentials for most people. Tally Pro adds unlimited people, automated reminders, and export — perfect if you track a lot." },
-      { q: "Is my data safe?", a: "Yes. Tally uses Firebase enterprise-grade security. We never sell or share your data with third parties." },
-    ];
-    const faqContainer = document.getElementById('faqs');
-    faqs.forEach(f => {
-      const div = document.createElement('div');
-      div.className = 'faq-item';
-      div.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;gap:12px"><span style="font-size:15px;font-weight:500;color:#111;line-height:1.45">${f.q}</span><span class="ms arrow" style="font-size:20px;color:#888;flex-shrink:0">keyboard_arrow_down</span></div><p>${f.a}</p>`;
-      div.addEventListener('click', () => div.classList.toggle('open'));
-      faqContainer.appendChild(div);
-    });
-  </script>
 </body>
 
 </html>
