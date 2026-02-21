@@ -68,6 +68,19 @@ const AVATAR_COLORS = [
   { bg: "#E8D5F5", fg: "#2D0057" },
 ];
 const Avatar = ({ person, size = 44, showPaidBadge = false }) => {
+  if (person?.photoUrl) {
+    return (
+      <div style={{ position: "relative", flexShrink: 0, width: size, height: size }}>
+        <img src={person.photoUrl} alt="Avatar" style={{ width: size, height: size, borderRadius: "50%", objectFit: "cover", display: "block" }} />
+        {showPaidBadge && (
+          <div style={{ position: "absolute", bottom: -2, right: -2, width: Math.round(size * 0.38), height: Math.round(size * 0.38), borderRadius: "50%", background: "#3A9E6E", border: "2px solid #fff", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <span className="material-symbols-outlined" style={{ fontSize: Math.round(size * 0.22), color: "#fff", fontVariationSettings: "'FILL' 1, 'wght' 700" }}>check</span>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   const str = person?.fullName || person?.name || "?";
   let hash = 0;
   for (let i = 0; i < str.length; i++) hash += str.charCodeAt(i);
@@ -766,9 +779,9 @@ const AddPersonScreen = ({ onBack, onAdd }) => {
   const trimmed = query.trim();
   const results = trimmed.length >= 2
     ? globalUsers.filter(u =>
-      (u.name.toLowerCase().includes(trimmed.toLowerCase()) ||
-        (u.phone && u.phone.replace(/\s/g, "").includes(trimmed.replace(/\s/g, ""))))
-      && !existingGlobalIds.has(u.id) && !existingNames.has(u.name)
+      (u?.name?.toLowerCase().includes(trimmed.toLowerCase()) ||
+        (u?.phone && u.phone.replace(/\s/g, "").includes(trimmed.replace(/\s/g, ""))))
+      && u.isRegistered === true
     )
     : [];
 
@@ -789,6 +802,7 @@ const AddPersonScreen = ({ onBack, onAdd }) => {
       fullName: u.name,
       initials,
       phone: u.phone || null,
+      photoUrl: u.photoUrl || null,
       globalId: u.id,
       isLinked: true
     });
@@ -836,13 +850,15 @@ const AddPersonScreen = ({ onBack, onAdd }) => {
             {results.map(u => (
               <div key={u.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", background: "#fff", border: "1px solid #E2E2E2", borderRadius: 99, marginBottom: 10 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                  <Avatar person={{ fullName: u.name, name: u.name }} size={44} />
+                  <Avatar person={{ fullName: u.name, name: u.name, photoUrl: u.photoUrl }} size={44} />
                   <div>
                     <div style={{ fontWeight: 600, fontSize: 15, color: "#111" }}>{u.name}</div>
                     {u.phone && <div style={{ fontSize: 12, color: "#BABABA", marginTop: 2 }}>{u.phone}</div>}
                   </div>
                 </div>
-                <button onClick={() => handleGlobalAdd(u)} style={{ background: "#E8E0F7", border: "none", borderRadius: 99, padding: "8px 16px", fontSize: 13, fontWeight: 600, color: "#7C5CBF", cursor: "pointer" }}>Add</button>
+                {existingGlobalIds.has(u.id) || existingNames.has(u.name)
+                  ? <span style={{ fontSize: 13, color: "#BABABA", fontWeight: 600, paddingRight: 8 }}>Added</span>
+                  : <button onClick={() => handleGlobalAdd(u)} style={{ background: "#E8E0F7", border: "none", borderRadius: 99, padding: "8px 16px", fontSize: 13, fontWeight: 600, color: "#7C5CBF", cursor: "pointer" }}>Add</button>}
               </div>
             ))}
           </div>
@@ -878,7 +894,7 @@ const AddPersonScreen = ({ onBack, onAdd }) => {
 };
 
 // ── EDIT PERSON SCREEN ────────────────────────────────────────
-const EditPersonScreen = ({ person, onBack, onSave }) => {
+const EditPersonScreen = ({ person, onBack, onSave, onUnlink }) => {
   const [fullName, setFullName] = useState(person.fullName || "");
   const [phone, setPhone] = useState(person.phone || "");
 
@@ -935,6 +951,14 @@ const EditPersonScreen = ({ person, onBack, onSave }) => {
           style={{ width: "100%", background: fullName.trim() ? "#E8E0F7" : "#F5F5F5", border: "none", borderRadius: 99, padding: "16px 0", fontSize: 15, fontWeight: 600, color: fullName.trim() ? "#7C5CBF" : "#BABABA", cursor: fullName.trim() ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, transition: "all 150ms" }}>
           <span className="material-symbols-outlined" style={{ fontSize: 18 }}>check</span>
           Save changes
+        </button>
+
+        <div style={{ fontSize: 12, fontWeight: 600, color: "#888", margin: "32px 0 10px", textTransform: "uppercase", letterSpacing: .7 }}>Danger zone</div>
+        <button
+          onClick={onUnlink}
+          style={{ width: "100%", background: "#FFF0F0", border: "none", borderRadius: 99, padding: "16px 0", fontSize: 15, fontWeight: 600, color: "#D96A6A", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+          <span className="material-symbols-outlined" style={{ fontSize: 18 }}>person_remove</span>
+          Unlink person
         </button>
       </div>
     </div>
@@ -1091,6 +1115,7 @@ export default function App() {
                 await setDoc(globalUserDoc(user.uid), {
                   name: user.displayName || shadowSnap.data().name || "User",
                   email: user.email,
+                  photoUrl: user.photoURL || null,
                   isRegistered: true,
                   claimedFrom: inviteId
                 }, { merge: true });
@@ -1104,10 +1129,10 @@ export default function App() {
                 window.history.replaceState({}, document.title, window.location.pathname);
                 showSuccess(`Profile claimed!`, "Your history has been restored.", "how_to_reg", "#7C5CBF", "#F4F2FA");
               } else {
-                await setDoc(globalUserDoc(user.uid), { name: user.displayName || "User", email: user.email, isRegistered: true }, { merge: true });
+                await setDoc(globalUserDoc(user.uid), { name: user.displayName || "User", email: user.email, photoUrl: user.photoURL || null, isRegistered: true }, { merge: true });
               }
             } else {
-              await setDoc(globalUserDoc(user.uid), { name: user.displayName || "User", email: user.email, isRegistered: true }, { merge: true });
+              await setDoc(globalUserDoc(user.uid), { name: user.displayName || "User", email: user.email, photoUrl: user.photoURL || null, isRegistered: true }, { merge: true });
             }
           } catch (e) {
             console.error("Interceptor/Global Profile save failed. Using local state. Error:", e);
@@ -1130,7 +1155,7 @@ export default function App() {
     if (!authUser) { setPeople([]); setTransactions([]); setGlobalUsers([]); return; }
     const uid = authUser.uid;
     const unsubP = onSnapshot(peopleCol(uid), snap =>
-      setPeople(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+      setPeople(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(p => !p.isHidden))
     );
     const unsubT = onSnapshot(txCol(uid), snap =>
       setTransactions(snap.docs.map(d => ({ id: d.id, ...d.data() })))
@@ -1195,7 +1220,9 @@ export default function App() {
   // ── CRUD → Firestore ──────────────────────────────────────
   const addTransaction = async (data) => {
     if (!authUser) return;
-    await addDoc(txCol(authUser.uid), {
+    const person = people.find(p => p.id === data.personId);
+    const txId = doc(txCol(authUser.uid)).id;
+    const payload = {
       ...data,
       datetime: new Date().toISOString(),
       status: "unpaid",
@@ -1203,34 +1230,103 @@ export default function App() {
       loggedByName: authUser.displayName || "You",
       reminderCount: 0,
       currency: "ZAR",
-    });
+    };
+
+    if (person?.isLinked && person?.globalId) {
+      const batch = writeBatch(db);
+      batch.set(txDoc(authUser.uid, txId), payload);
+      batch.set(txDoc(person.globalId, txId), {
+        ...payload,
+        direction: payload.direction === "gave" ? "got" : "gave",
+        personId: authUser.uid, // Point back to the creator
+      });
+      await batch.commit();
+    } else {
+      await setDoc(txDoc(authUser.uid, txId), payload);
+    }
+
     showSuccess("Transaction saved!", `R${fmt(data.amount)} logged`, "check_circle");
   };
 
   const updateTransaction = async (updated) => {
     if (!authUser) return;
     const { id, ...data } = updated;
-    await updateDoc(txDoc(authUser.uid, id), data);
+    const person = people.find(p => p.id === data.personId);
+
+    if (person?.isLinked && person?.globalId) {
+      const batch = writeBatch(db);
+      batch.update(txDoc(authUser.uid, id), data);
+      batch.update(txDoc(person.globalId, id), {
+        ...data,
+        direction: data.direction === "gave" ? "got" : "gave",
+        personId: authUser.uid,
+      });
+      await batch.commit();
+    } else {
+      await updateDoc(txDoc(authUser.uid, id), data);
+    }
+
     showSuccess("Transaction updated!", "", "edit");
   };
 
   const markPaid = async (id) => {
     if (!authUser) return;
-    await updateDoc(txDoc(authUser.uid, id), { status: "paid" });
+    const tx = transactions.find(t => t.id === id);
+    if (!tx) return;
+    const person = people.find(p => p.id === tx.personId);
+
+    if (person?.isLinked && person?.globalId) {
+      const batch = writeBatch(db);
+      batch.update(txDoc(authUser.uid, id), { status: "paid" });
+      batch.update(txDoc(person.globalId, id), { status: "paid" });
+      await batch.commit();
+    } else {
+      await updateDoc(txDoc(authUser.uid, id), { status: "paid" });
+    }
     showSuccess("Marked as settled!", "Great, that's sorted.", "check_circle");
   };
 
   const markAllPaid = async (personId) => {
     if (!authUser) return;
+    const person = people.find(p => p.id === personId);
     const unpaid = transactions.filter(t => t.personId === personId && t.status === "unpaid");
-    await Promise.all(unpaid.map(t => updateDoc(txDoc(authUser.uid, t.id), { status: "paid" })));
+    if (!unpaid.length) return;
+
+    if (person?.isLinked && person?.globalId) {
+      const batch = writeBatch(db);
+      unpaid.forEach(t => {
+        batch.update(txDoc(authUser.uid, t.id), { status: "paid" });
+        batch.update(txDoc(person.globalId, t.id), { status: "paid" });
+      });
+      await batch.commit();
+    } else {
+      await Promise.all(unpaid.map(t => updateDoc(txDoc(authUser.uid, t.id), { status: "paid" })));
+    }
     showSuccess("All settled!", `${unpaid.length} transaction${unpaid.length !== 1 ? "s" : ""} marked as paid`, "check_circle");
   };
 
   const deleteTransaction = async (id) => {
     if (!authUser) return;
-    await deleteDoc(txDoc(authUser.uid, id));
+    const tx = transactions.find(t => t.id === id);
+    if (!tx) return;
+    const person = people.find(p => p.id === tx.personId);
+
+    if (person?.isLinked && person?.globalId) {
+      const batch = writeBatch(db);
+      batch.delete(txDoc(authUser.uid, id));
+      batch.delete(txDoc(person.globalId, id));
+      await batch.commit();
+    } else {
+      await deleteDoc(txDoc(authUser.uid, id));
+    }
     showSuccess("Deleted", "Transaction removed", "delete", "#B00020", "#FDEAEA");
+  };
+
+  const unlinkPerson = async (id) => {
+    if (!authUser) return;
+    await updateDoc(personDoc(authUser.uid, id), { isHidden: true });
+    setScreen("home");
+    showSuccess("Unlinked", "Person removed from view", "person_remove", "#D96A6A", "#FFF0F0");
   };
 
   const incrementReminder = async (id) => {
@@ -1244,35 +1340,41 @@ export default function App() {
     const words = contact.name.split(" ");
     const initials = (words[0][0] + (words[1] ? words[1][0] : "")).toUpperCase();
 
-    // 1. Create global shadow user
-    const shadowRef = doc(collection(db, "users"));
-    const shadowId = shadowRef.id;
+    let targetId = contact.globalId;
+    if (!targetId) {
+      // 1. Create global shadow user
+      const shadowRef = doc(collection(db, "users"));
+      targetId = shadowRef.id;
 
-    try {
-      await setDoc(shadowRef, {
-        name: contact.name,
-        phone: contact.phone || null,
-        isRegistered: false,
-        isShadow: true,
-        createdBy: authUser.uid
-      });
-    } catch (e) {
-      console.warn("Could not create global shadow profile, creating local only:", e);
+      try {
+        await setDoc(shadowRef, {
+          name: contact.name,
+          phone: contact.phone || null,
+          isRegistered: false,
+          isShadow: true,
+          createdBy: authUser.uid
+        });
+      } catch (e) {
+        console.warn("Could not create global shadow profile, creating local only:", e);
+      }
     }
 
-    // 2. Link shadow user to personal people list
-    await setDoc(personDoc(authUser.uid, shadowId), {
+    // 2. Link shadow/global user to personal people list (merge resurrects hidden users automatically without breaking sync)
+    // If it's a global add, sync the photoUrl.
+    await setDoc(personDoc(authUser.uid, targetId), {
       name: words[0],
       fullName: contact.name,
       initials: contact.initials || initials,
-      isLinked: false,
+      isLinked: !!contact.globalId,
       phone: contact.phone || null,
-      globalId: shadowId
-    });
+      photoUrl: contact.photoUrl || null,
+      globalId: targetId,
+      isHidden: false
+    }, { merge: true });
 
     setTab("home");
     setScreen("home");
-    showSuccess(`${words[0]} added!`, "They're now in your people", "person_add");
+    showSuccess(`${words[0]} linked!`, "They've been added to your people", "person_add");
   };
 
   const updatePerson = async (updated) => {
@@ -1332,7 +1434,7 @@ export default function App() {
           {screen === "home" && <HomeScreen onPersonClick={p => { setSelPerson(p); setScreen("person"); }} onTxClick={tx => { setSelTx(tx); setSheetOpen(true); }} onAddPerson={() => setScreen("addperson")} />}
           {screen === "person" && selPerson && <PersonScreen person={selPerson} onBack={goBack} onTxClick={tx => { setSelTx(tx); setSheetOpen(true); }} onAddNew={p => { setSelPerson(p); setEditTx(null); setScreen("add"); }} onEditPerson={p => { setSelPerson(p); setScreen("editperson"); }} />}
           {screen === "add" && selPerson && <AddScreen person={selPerson} transaction={editTx} onBack={goBack} onDone={() => { setScreen(selPerson ? "person" : "home"); }} />}
-          {screen === "editperson" && selPerson && <EditPersonScreen person={selPerson} onBack={goBack} onSave={updatePerson} />}
+          {screen === "editperson" && selPerson && <EditPersonScreen person={selPerson} onBack={goBack} onSave={updatePerson} onUnlink={() => unlinkPerson(selPerson.id)} />}
           {screen === "addperson" && <AddPersonScreen onBack={goBack} onAdd={addPerson} />}
           {screen === "transactions" && <TxScreen onTxClick={tx => { setSelTx(tx); setSheetOpen(true); }} />}
           {screen === "account" && <AccountScreen onNavigate={setScreen} authUser={authUser} onSignOut={handleSignOut} />}
